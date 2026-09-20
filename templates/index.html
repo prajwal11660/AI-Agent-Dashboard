@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Control Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+    const API = window.location.origin;
+    const AGENTS = [
+      { name: 'Research Agent', code: 'R1', role: 'Retrieval & tool routing', detail: 'Selects and runs an available tool' },
+      { name: 'Analysis Agent', code: 'A2', role: 'Context classification', detail: 'Runs local Transformer inference' },
+      { name: 'Response Agent', code: 'F3', role: 'Final synthesis', detail: 'Publishes the workflow response' },
+    ];
+
+    function Badge({ children, tone = '' }) { return <span className={`badge ${tone}`}>{children}</span>; }
+    function Icon({ children }) { return <span className="icon" aria-hidden="true">{children}</span>; }
+
+    function App() {
+      const [task, setTask] = useState('Analyze the latest AI innovation news');
+      const [events, setEvents] = useState([]);
+      const [workflow, setWorkflow] = useState(null);
+      const [model, setModel] = useState(null);
+      const [connected, setConnected] = useState(false);
+      const [busy, setBusy] = useState(false);
+      const [error, setError] = useState('');
+
+      useEffect(() => {
+        fetch(`${API}/api/model`).then(response => response.json()).then(setModel).catch(() => setError('Model information unavailable'));
+        const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+        socket.onopen = () => setConnected(true);
+        socket.onclose = () => setConnected(false);
+        socket.onerror = () => setError('Telemetry connection unavailable');
+        socket.onmessage = message => {
+          const event = JSON.parse(message.data);
+          setEvents(previous => [event, ...previous].slice(0, 100));
+          if (event.workflow_id) {
+            setWorkflow(previous => {
+              const current = previous && previous.workflow_id === event.workflow_id
+                ? previous
+                : { workflow_id: event.workflow_id, task: event.task || 'Workflow in progress', status: 'queued', result: null };
+              return {
+                ...current,
+                status: event.status || current.status,
+                result: event.result || event.response || current.result,
+              };
+            });
+          }
+          if (event.metrics) setModel(previous => ({ ...previous, ...event.metrics, status: 'active' }));
+          if (event.type === 'workflow_completed' || event.type === 'workflow_failed') setBusy(false);
+        };
+        return () => socket.close();
+      }, []);
+
+      async function submit(event) {
+        event.preventDefault();
+        if (!task.trim() || busy) return;
+        setBusy(true); setError(''); setEvents([]); setWorkflow(null);
+        try {
+          const response = await fetch(`${API}/api/workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task }) });
+          if (!response.ok) throw new Error('Workflow could not be started');
+          const created = await response.json();
+          setWorkflow(previous => previous && previous.workflow_id === created.workflow_id
+            ? { ...created, status: previous.status, result: previous.result || created.result }
+            : created);
+        } catch (submissionError) { setError(submissionError.message); setBusy(false); }
+      }
+
+      const latest = events[0];
+      const toolEvent = events.find(item => ['tool_completed', 'tool_failed', 'tool_started', 'tool_selected'].includes(item.type));
+      const inferenceEvent = events.find(item => item.type === 'model_inference_completed');
+      const correctionEvent = events.find(item => item.type === 'self_correction_triggered');
+      const statusFor = agent => {
+        const found = events.find(item => item.agent === agent && (item.type === 'agent_started' || item.type === 'agent_completed' || item.type === 'final_response_generated'));
+        return found ? (found.type === 'agent_completed' || found.type === 'final_response_generated' ? 'completed' : 'running') : 'idle';
+      };
+      const completedCount = AGENTS.filter(agent => statusFor(agent) === 'completed').length;
+      const progress = workflow?.status === 'completed' ? 100 : Math.round((completedCount / AGENTS.length) * 100);
+
+      return <div className="app-shell">
+        <aside className="rail">
+          <div className="brand"><span className="brand-mark">A<span>/</span></span><div><strong>AGENT</strong><small>CONTROL ROOM</small></div></div>
+          <div className="rail-line"></div>
+          <nav><a className="active"><Icon>◈</Icon>Overview</a><a><Icon>⌁</Icon>Workflows</a><a><Icon>◇</Icon>Runtime</a></nav>
+          <div className="rail-bottom"><div className={`live-dot ${connected ? 'online' : ''}`}></div><span>{connected ? 'WS CONNECTED' : 'WS CONNECTING'}</span><small>v1.0.0 / LOCAL</small></div>
+        </aside>
+
+        <main className="content">
+          <header className="topbar"><div><p className="kicker">MULTI-AGENT OBSERVABILITY</p><h1>Dashboard <span>/</span> overview</h1></div><div className="top-actions"><div className="runtime-chip"><i className={connected ? 'green' : ''}></i><span>Telemetry</span><b>{connected ? 'LIVE' : 'WAITING'}</b></div><div className="avatar">AC</div></div></header>
+
+          <section className="welcome"><div><p className="kicker">WORKFLOW ORCHESTRATOR</p><h2>Make the system<br /><em>legible.</em></h2><p className="welcome-copy">Watch each agent turn a high-level task into tool calls, measured inference, and a grounded response.</p></div><div className="signal-art"><span></span><span></span><span></span><div>R1<br /><b>→</b><br />A2 <b>→</b> F3</div></div></section>
+
+          <section className="launcher card"><div className="section-head"><div><span className="section-number">01</span><div><h3>Launch a workflow</h3><p>Submit a task to the FastAPI orchestrator</p></div></div><Badge tone={connected ? 'success' : 'warning'}>{connected ? 'websocket ready' : 'connecting'}</Badge></div><form onSubmit={submit}><div className="input-wrap"><span className="prompt">›</span><textarea value={task} onChange={event => setTask(event.target.value)} placeholder="Describe a task for the agents..." /></div><button disabled={busy}>{busy ? 'Running workflow' : 'Start workflow'}<span>↗</span></button></form>{error && <p className="error">{error}</p>}</section>
+
+          <section className="overview-grid"><div className="card workflow-card"><div className="section-head"><div><span className="section-number">02</span><div><h3>Workflow pipeline</h3><p>{workflow ? workflow.task : 'Three stages, one observable execution'}</p></div></div><Badge tone={workflow?.status === 'completed' ? 'success' : busy ? 'accent' : ''}>{workflow?.status || 'standby'}</Badge></div><div className="progress-track"><span style={{ width: `${progress}%` }}></span></div><div className="agent-list">{AGENTS.map((agent, index) => { const status = statusFor(agent.name); return <div className={`agent-row ${status}`} key={agent.name}><div className="agent-index">{agent.code}</div><div className="agent-copy"><strong>{agent.name}</strong><span>{agent.role}</span></div><div className="agent-detail">{agent.detail}</div><Badge tone={status === 'completed' ? 'success' : status === 'running' ? 'accent' : ''}>{status}</Badge>{index < AGENTS.length - 1 && <div className="connector"></div>}</div>; })}</div></div>
+            <div className="card runtime-card"><div className="section-head"><div><span className="section-number">03</span><div><h3>Inference runtime</h3><p>Local model and execution state</p></div></div><span className="pulse-label"><i></i>{model?.device || 'loading'}</span></div><div className="runtime-main"><div className="device-orbit"><div><strong>{model?.device === 'cuda' ? 'GPU' : 'CPU'}</strong><small>{model?.cuda_available ? 'CUDA AVAILABLE' : 'FALLBACK MODE'}</small></div></div><div className="runtime-values"><div><span>MODEL</span><strong>{model?.model ? model.model.split('/').pop() : 'Loading...'}</strong></div><div><span>QUANTIZATION</span><strong>{model?.quantized ? 'ACTIVE' : 'INACTIVE'}</strong></div><div><span>BATCHING</span><strong>{model?.batch_size || 1} ITEM</strong></div><div><span>LATENCY</span><strong>{model?.latency_ms ? `${model.latency_ms} ms` : '—'}</strong></div></div></div></div></section>
+
+          <section className="lower-grid"><div className="card tool-card"><div className="section-head"><div><span className="section-number">04</span><div><h3>Tool routing</h3><p>Research Agent execution</p></div></div><Icon>↗</Icon></div><div className="tool-body"><div className="tool-icon">⌁</div><div><span className="label">SELECTED TOOL</span><strong>{toolEvent?.tool || 'Awaiting task'}</strong><p>{toolEvent?.type === 'tool_failed' ? 'Tool failed; self-correction used task context.' : toolEvent?.type === 'tool_completed' ? 'Execution completed and passed to Analysis Agent.' : 'The orchestrator will select a tool from the registry.'}</p></div><Badge tone={toolEvent?.type === 'tool_failed' ? 'warning' : toolEvent?.type === 'tool_completed' ? 'success' : ''}>{toolEvent?.status || 'idle'}</Badge></div>{correctionEvent && <div className="correction"><span>↻</span><div><strong>Self-correction triggered</strong><small>{correctionEvent.reason}</small></div></div>}</div>
+            <div className="card response-card"><div className="section-head"><div><span className="section-number">05</span><div><h3>Final response</h3><p>Response Agent output</p></div></div><Badge tone={workflow?.result ? 'success' : ''}>{workflow?.result ? 'published' : 'pending'}</Badge></div><div className="response-body">{workflow?.result || 'The final response will appear here when the Response Agent completes the workflow.'}</div></div></section>
+
+          <section className="card events-card"><div className="section-head"><div><span className="section-number">06</span><div><h3>Live telemetry</h3><p>Safe execution events from the WebSocket stream</p></div></div><span className="event-count">{events.length.toString().padStart(2, '0')} EVENTS</span></div><div className="events-table"><div className="event-header"><span>TIME</span><span>EVENT</span><span>ACTOR / CONTEXT</span><span>STATUS</span></div>{events.length ? events.slice(0, 8).map((item, index) => <div className="event-row" key={`${item.timestamp}-${index}`}><time>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><strong>{item.type.replaceAll('_', ' ')}</strong><span>{item.agent || item.tool || 'orchestrator'}</span><Badge tone={item.status === 'completed' ? 'success' : item.status === 'failed' ? 'warning' : item.status === 'running' ? 'accent' : ''}>{item.status || 'emitted'}</Badge></div>) : <div className="empty-state"><span>◌</span><p>Start a workflow to see decomposition, routing, inference, and completion events.</p></div>}</div></section>
+          <footer><span>SAFE TELEMETRY · PRIVATE REASONING IS NEVER STREAMED</span><span>{latest ? `LAST EVENT / ${latest.type}` : 'SYSTEM READY'}</span></footer>
+        </main>
+      </div>;
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
