@@ -1,142 +1,118 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <title>Agentic Intelligence | Research Hub</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; }
-        .glass { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
-        .aura-bg { background: radial-gradient(circle at 0% 0%, rgba(16, 185, 129, 0.05) 0%, transparent 25%), 
-                           radial-gradient(circle at 100% 100%, rgba(245, 158, 11, 0.05) 0%, transparent 25%),
-                           #020617; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-        .glow-emerald { text-shadow: 0 0 20px rgba(16, 185, 129, 0.4); }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Control Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
-<body class="aura-bg text-slate-200 min-h-screen selection:bg-emerald-500/30 overflow-x-hidden">
-    
-    <div class="container mx-auto p-6 lg:p-12">
-        <!-- Header -->
-        <header class="flex justify-between items-end mb-16">
-            <div>
-                <h1 class="text-4xl font-extrabold text-white tracking-tighter mb-2">
-                    Agentic<span class="text-emerald-400">.</span>
-                </h1>
-                <p class="text-slate-500 text-xs uppercase tracking-[0.3em] font-semibold">Real-Time Research Node</p>
-            </div>
-            <div id="status" class="px-5 py-2 glass rounded-full text-[10px] font-bold uppercase tracking-widest transition-all duration-500 border border-white/5">
-                Connecting...
-            </div>
-        </header>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+    const API = window.location.origin;
+    const AGENTS = [
+      { name: 'Research Agent', code: 'R1', role: 'Retrieval & tool routing', detail: 'Selects and runs an available tool' },
+      { name: 'Analysis Agent', code: 'A2', role: 'Context classification', detail: 'Runs local Transformer inference' },
+      { name: 'Response Agent', code: 'F3', role: 'Final synthesis', detail: 'Publishes the workflow response' },
+    ];
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-12">
-            <!-- Left Column: Feed -->
-            <div class="lg:col-span-8 space-y-8">
-                <div class="flex items-center justify-between">
-                    <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest">Live Stream</h2>
-                    <div class="h-px flex-grow mx-6 bg-gradient-to-r from-white/10 to-transparent"></div>
-                </div>
-                
-                <div id="insight-feed" class="space-y-6 h-[700px] overflow-y-auto pr-6 custom-scrollbar">
-                    <!-- Cards injected here -->
-                </div>
-            </div>
+    function Badge({ children, tone = '' }) { return <span className={`badge ${tone}`}>{children}</span>; }
+    function Icon({ children }) { return <span className="icon" aria-hidden="true">{children}</span>; }
 
-            <!-- Right Column: Sidebar -->
-            <div class="lg:col-span-4 space-y-10">
-                <div class="glass p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
-                    <div class="absolute top-0 right-0 -mr-10 -mt-10 w-40 h-40 bg-emerald-500/5 blur-[80px] rounded-full"></div>
-                    
-                    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-10 text-center">Market Mood</h2>
-                    
-                    <div class="text-center mb-10">
-                        <span id="avg-score" class="text-8xl font-extrabold text-white glow-emerald tracking-tighter">0.0</span>
-                        <p class="text-emerald-500/60 text-[10px] font-bold uppercase tracking-widest mt-4">Composite Score</p>
-                    </div>
+    function App() {
+      const [task, setTask] = useState('Analyze the latest AI innovation news');
+      const [events, setEvents] = useState([]);
+      const [workflow, setWorkflow] = useState(null);
+      const [model, setModel] = useState(null);
+      const [connected, setConnected] = useState(false);
+      const [busy, setBusy] = useState(false);
+      const [error, setError] = useState('');
 
-                    <!-- GPU Agent -->
-                    <div class="mt-12 pt-10 border-t border-white/5">
-                        <div class="flex items-center gap-3 mb-6">
-                            <div class="w-1.5 h-1.5 bg-amber-400 rounded-full animate-ping"></div>
-                            <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Analyst Terminal</h3>
-                        </div>
-                        
-                        <div id="agent-response" class="bg-black/40 p-6 rounded-2xl text-xs text-amber-200/70 italic mb-6 border border-amber-500/5 leading-relaxed min-h-[100px] flex items-center justify-center text-center">
-                            Awaiting transmission...
-                        </div>
+      useEffect(() => {
+        fetch(`${API}/api/model`).then(response => response.json()).then(setModel).catch(() => setError('Model information unavailable'));
+        const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+        socket.onopen = () => setConnected(true);
+        socket.onclose = () => setConnected(false);
+        socket.onerror = () => setError('Telemetry connection unavailable');
+        socket.onmessage = message => {
+          const event = JSON.parse(message.data);
+          setEvents(previous => [event, ...previous].slice(0, 100));
+          if (event.workflow_id) {
+            setWorkflow(previous => {
+              const current = previous && previous.workflow_id === event.workflow_id
+                ? previous
+                : { workflow_id: event.workflow_id, task: event.task || 'Workflow in progress', status: 'queued', result: null };
+              return {
+                ...current,
+                status: event.status || current.status,
+                result: event.result || event.response || current.result,
+              };
+            });
+          }
+          if (event.metrics) setModel(previous => ({ ...previous, ...event.metrics, status: 'active' }));
+          if (event.type === 'workflow_completed' || event.type === 'workflow_failed') setBusy(false);
+        };
+        return () => socket.close();
+      }, []);
 
-                        <div class="relative">
-                            <input type="text" id="user-query" 
-                                   class="w-full bg-white/5 border border-white/5 rounded-2xl p-5 text-xs text-white focus:outline-none focus:border-emerald-500/30 transition-all placeholder:text-slate-600 shadow-inner"
-                                   placeholder="Ask the node anything...">
-                            <button onclick="askAgent()" 
-                                    class="absolute right-2 top-2 bg-white text-black font-bold px-5 py-3 rounded-xl text-[10px] uppercase tracking-widest hover:bg-emerald-400 transition-all active:scale-95">
-                                Send
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+      async function submit(event) {
+        event.preventDefault();
+        if (!task.trim() || busy) return;
+        setBusy(true); setError(''); setEvents([]); setWorkflow(null);
+        try {
+          const response = await fetch(`${API}/api/workflows`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task }) });
+          if (!response.ok) throw new Error('Workflow could not be started');
+          const created = await response.json();
+          setWorkflow(previous => previous && previous.workflow_id === created.workflow_id
+            ? { ...created, status: previous.status, result: previous.result || created.result }
+            : created);
+        } catch (submissionError) { setError(submissionError.message); setBusy(false); }
+      }
 
-    <script>
-        const socket = io();
-        const feed = document.getElementById('insight-feed');
-        const statusBadge = document.getElementById('status');
+      const latest = events[0];
+      const toolEvent = events.find(item => ['tool_completed', 'tool_failed', 'tool_started', 'tool_selected'].includes(item.type));
+      const inferenceEvent = events.find(item => item.type === 'model_inference_completed');
+      const correctionEvent = events.find(item => item.type === 'self_correction_triggered');
+      const statusFor = agent => {
+        const found = events.find(item => item.agent === agent && (item.type === 'agent_started' || item.type === 'agent_completed' || item.type === 'final_response_generated'));
+        return found ? (found.type === 'agent_completed' || found.type === 'final_response_generated' ? 'completed' : 'running') : 'idle';
+      };
+      const completedCount = AGENTS.filter(agent => statusFor(agent) === 'completed').length;
+      const progress = workflow?.status === 'completed' ? 100 : Math.round((completedCount / AGENTS.length) * 100);
 
-        socket.on('connect', () => {
-            statusBadge.innerText = "Node Online";
-            statusBadge.classList.add('text-emerald-400', 'bg-emerald-500/5', 'border-emerald-500/20');
-        });
+      return <div className="app-shell">
+        <aside className="rail">
+          <div className="brand"><span className="brand-mark">A<span>/</span></span><div><strong>AGENT</strong><small>CONTROL ROOM</small></div></div>
+          <div className="rail-line"></div>
+          <nav><a className="active"><Icon>◈</Icon>Overview</a><a><Icon>⌁</Icon>Workflows</a><a><Icon>◇</Icon>Runtime</a></nav>
+          <div className="rail-bottom"><div className={`live-dot ${connected ? 'online' : ''}`}></div><span>{connected ? 'WS CONNECTED' : 'WS CONNECTING'}</span><small>v1.0.0 / LOCAL</small></div>
+        </aside>
 
-        socket.on('new_insight', (data) => {
-            const card = document.createElement('div');
-            const accentColor = data.priority ? "border-amber-500/40" : "border-white/5";
-            
-            card.className = `glass p-8 rounded-[2rem] border-l-2 ${accentColor} animate__animated animate__fadeInUp group transition-all hover:bg-white/[0.03]`;
-            card.innerHTML = `
-                <div class="flex justify-between items-start mb-4">
-                    <h4 class="font-bold text-lg leading-tight ${data.priority ? 'text-amber-200' : 'text-white'}">${data.title}</h4>
-                    <span class="text-[10px] font-black bg-white/5 px-3 py-1 rounded-full text-emerald-400 border border-white/5">${data.score}</span>
-                </div>
-                <p class="text-slate-400 text-xs leading-relaxed mb-6 font-light">${data.summary}</p>
-                <div class="flex items-center gap-4 text-[9px] uppercase tracking-widest font-bold text-slate-500">
-                    <span class="flex items-center gap-2">
-                        <div class="w-1 h-1 rounded-full bg-emerald-500"></div>
-                        ${data.sentiment}
-                    </span>
-                    <span class="opacity-20">|</span>
-                    <span>TechCrunch Node</span>
-                </div>
-            `;
-            feed.prepend(card);
-            document.getElementById('avg-score').innerText = data.score;
-        });
+        <main className="content">
+          <header className="topbar"><div><p className="kicker">MULTI-AGENT OBSERVABILITY</p><h1>Dashboard <span>/</span> overview</h1></div><div className="top-actions"><div className="runtime-chip"><i className={connected ? 'green' : ''}></i><span>Telemetry</span><b>{connected ? 'LIVE' : 'WAITING'}</b></div><div className="avatar">AC</div></div></header>
 
-        function askAgent() {
-            const input = document.getElementById('user-query');
-            const responseBox = document.getElementById('agent-response');
-            if(!input.value) return;
+          <section className="welcome"><div><p className="kicker">WORKFLOW ORCHESTRATOR</p><h2>Make the system<br /><em>legible.</em></h2><p className="welcome-copy">Watch each agent turn a high-level task into tool calls, measured inference, and a grounded response.</p></div><div className="signal-art"><span></span><span></span><span></span><div>R1<br /><b>→</b><br />A2 <b>→</b> F3</div></div></section>
 
-            responseBox.innerHTML = '<span class="text-emerald-400 animate-pulse tracking-widest text-[10px] uppercase font-black">Synthesizing...</span>';
-            socket.emit('ask_agent', { question: input.value });
-            input.value = ""; 
-        }
+          <section className="launcher card"><div className="section-head"><div><span className="section-number">01</span><div><h3>Launch a workflow</h3><p>Submit a task to the FastAPI orchestrator</p></div></div><Badge tone={connected ? 'success' : 'warning'}>{connected ? 'websocket ready' : 'connecting'}</Badge></div><form onSubmit={submit}><div className="input-wrap"><span className="prompt">›</span><textarea value={task} onChange={event => setTask(event.target.value)} placeholder="Describe a task for the agents..." /></div><button disabled={busy}>{busy ? 'Running workflow' : 'Start workflow'}<span>↗</span></button></form>{error && <p className="error">{error}</p>}</section>
 
-        socket.on('agent_answer', (data) => {
-            document.getElementById('agent-response').innerText = data.answer;
-        });
+          <section className="overview-grid"><div className="card workflow-card"><div className="section-head"><div><span className="section-number">02</span><div><h3>Workflow pipeline</h3><p>{workflow ? workflow.task : 'Three stages, one observable execution'}</p></div></div><Badge tone={workflow?.status === 'completed' ? 'success' : busy ? 'accent' : ''}>{workflow?.status || 'standby'}</Badge></div><div className="progress-track"><span style={{ width: `${progress}%` }}></span></div><div className="agent-list">{AGENTS.map((agent, index) => { const status = statusFor(agent.name); return <div className={`agent-row ${status}`} key={agent.name}><div className="agent-index">{agent.code}</div><div className="agent-copy"><strong>{agent.name}</strong><span>{agent.role}</span></div><div className="agent-detail">{agent.detail}</div><Badge tone={status === 'completed' ? 'success' : status === 'running' ? 'accent' : ''}>{status}</Badge>{index < AGENTS.length - 1 && <div className="connector"></div>}</div>; })}</div></div>
+            <div className="card runtime-card"><div className="section-head"><div><span className="section-number">03</span><div><h3>Inference runtime</h3><p>Local model and execution state</p></div></div><span className="pulse-label"><i></i>{model?.device || 'loading'}</span></div><div className="runtime-main"><div className="device-orbit"><div><strong>{model?.device === 'cuda' ? 'GPU' : 'CPU'}</strong><small>{model?.cuda_available ? 'CUDA AVAILABLE' : 'FALLBACK MODE'}</small></div></div><div className="runtime-values"><div><span>MODEL</span><strong>{model?.model ? model.model.split('/').pop() : 'Loading...'}</strong></div><div><span>QUANTIZATION</span><strong>{model?.quantized ? 'ACTIVE' : 'INACTIVE'}</strong></div><div><span>BATCHING</span><strong>{model?.batch_size || 1} ITEM</strong></div><div><span>LATENCY</span><strong>{model?.latency_ms ? `${model.latency_ms} ms` : '—'}</strong></div></div></div></div></section>
 
-        socket.on('connect_error', () => {
-            statusBadge.innerText = "Offline";
-            statusBadge.className = "px-5 py-2 glass rounded-full text-[10px] font-bold uppercase tracking-widest text-red-400 border-red-500/20";
-        });
-    </script>
+          <section className="lower-grid"><div className="card tool-card"><div className="section-head"><div><span className="section-number">04</span><div><h3>Tool routing</h3><p>Research Agent execution</p></div></div><Icon>↗</Icon></div><div className="tool-body"><div className="tool-icon">⌁</div><div><span className="label">SELECTED TOOL</span><strong>{toolEvent?.tool || 'Awaiting task'}</strong><p>{toolEvent?.type === 'tool_failed' ? 'Tool failed; self-correction used task context.' : toolEvent?.type === 'tool_completed' ? 'Execution completed and passed to Analysis Agent.' : 'The orchestrator will select a tool from the registry.'}</p></div><Badge tone={toolEvent?.type === 'tool_failed' ? 'warning' : toolEvent?.type === 'tool_completed' ? 'success' : ''}>{toolEvent?.status || 'idle'}</Badge></div>{correctionEvent && <div className="correction"><span>↻</span><div><strong>Self-correction triggered</strong><small>{correctionEvent.reason}</small></div></div>}</div>
+            <div className="card response-card"><div className="section-head"><div><span className="section-number">05</span><div><h3>Final response</h3><p>Response Agent output</p></div></div><Badge tone={workflow?.result ? 'success' : ''}>{workflow?.result ? 'published' : 'pending'}</Badge></div><div className="response-body">{workflow?.result || 'The final response will appear here when the Response Agent completes the workflow.'}</div></div></section>
+
+          <section className="card events-card"><div className="section-head"><div><span className="section-number">06</span><div><h3>Live telemetry</h3><p>Safe execution events from the WebSocket stream</p></div></div><span className="event-count">{events.length.toString().padStart(2, '0')} EVENTS</span></div><div className="events-table"><div className="event-header"><span>TIME</span><span>EVENT</span><span>ACTOR / CONTEXT</span><span>STATUS</span></div>{events.length ? events.slice(0, 8).map((item, index) => <div className="event-row" key={`${item.timestamp}-${index}`}><time>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><strong>{item.type.replaceAll('_', ' ')}</strong><span>{item.agent || item.tool || 'orchestrator'}</span><Badge tone={item.status === 'completed' ? 'success' : item.status === 'failed' ? 'warning' : item.status === 'running' ? 'accent' : ''}>{item.status || 'emitted'}</Badge></div>) : <div className="empty-state"><span>◌</span><p>Start a workflow to see decomposition, routing, inference, and completion events.</p></div>}</div></section>
+          <footer><span>SAFE TELEMETRY · PRIVATE REASONING IS NEVER STREAMED</span><span>{latest ? `LAST EVENT / ${latest.type}` : 'SYSTEM READY'}</span></footer>
+        </main>
+      </div>;
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
 </body>
 </html>

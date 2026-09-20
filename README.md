@@ -1,66 +1,61 @@
 # AI Agent Dashboard
 
-A full-stack, high-performance dashboard designed to orchestrate, monitor, and visualize autonomous multi-agent workflows. This application couples a responsive React.js frontend with a GPU-optimized Python backend to deliver low-latency telemetry and real-time task decomposition using local LLMs.
+A small, inspectable full-stack dashboard for multi-agent workflows. The FastAPI backend exposes REST endpoints and native WebSocket telemetry; the browser UI is a React application served directly by FastAPI, so no Node build step is required.
 
-## 🚀 Key Features
+## Implemented architecture
 
-* **Real-Time Agent Telemetry:** Live visualization of agent states, tool execution graphs, and thought processes using WebSocket/SSE streams.
-* **Local GPU Inference Optimization:** Built to maximize local VRAM efficiency, utilizing PyTorch batching and quantized transformer models for minimized latency.
-* **Autonomous Task Orchestration:** Supports multi-agent systems performing complex task decomposition, tool routing, and self-correction loops.
-* **Extensible Tool Ecosystem:** Modular architecture allowing seamless integration of custom local tools (file system utilities, shell executors, and database connectors).
+```text
+React dashboard
+  | REST + native WebSocket
+FastAPI API
+  |\n  | Orchestrator
+  |-- Research Agent -> ToolRegistry -> topic explainer / TechCrunch feed tool
+  |-- Analysis Agent -> local Hugging Face zero-shot classifier
+  `-- Response Agent -> safe final response
+```
 
-## 🛠️ Tech Stack
+A workflow is decomposed into research, analysis, and response subtasks. Tool failures emit a failure event, trigger a real retry using the submitted task as context, and allow the workflow to continue. Telemetry contains status and execution metadata only; private chain-of-thought is never streamed.
 
-* **Frontend:** React.js, Tailwind CSS, Vite / Create React App
-* **Backend:** FastAPI / Flask, Python
-* **AI & Machine Learning:** PyTorch, Hugging Face Transformers, LangChain / CrewAI (or custom agent loops)
-* **Database & Memory:** SQLite / PostgreSQL, Vector store integrations (FAISS/Chroma)
+## Setup
 
-## 🏗️ Architecture Overview
-[ React.js Frontend ] <--- WebSockets / REST ---> [ FastAPI / Flask Backend ]
-|
-[ Agent Orchestration Layer ]
-|
-( Local GPU Inference / PyTorch )
+Python 3.10+ is required. From this directory:
 
-
-## ⚙️ Getting Started
-
-### Prerequisites
-* Python 3.10+
-* Node.js (v18+)
-* NVIDIA GPU + CUDA Toolkit (Recommended for accelerated local inference)
-
-### 1. Backend Setup
-```bash
-# Clone the repository
-git clone [https://github.com/yourusername/agentic-ai-dashboard.git](https://github.com/yourusername/agentic-ai-dashboard.git)
-cd agentic-ai-dashboard/backend
-
-# Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
-
-# Install dependencies
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+Copy-Item .env.example .env
+python app.py
+```
 
-# Run the development server
-python main.py
-2. Frontend Setup
-Bash
-cd ../frontend
+Open `http://127.0.0.1:8000`. The first model-backed workflow may download the configured Hugging Face model. If download or model loading fails, the app reports `fallback: true` in inference telemetry and uses a deterministic label fallback so the dashboard remains demonstrable.
 
-# Install dependencies
-npm install
+## Configuration
 
-# Run the development server
-npm run dev
-📊 Performance Metrics
-Inference Latency: Optimized local model execution loop ensuring low-overhead state updates.
+- `HOST`, `PORT`: FastAPI bind settings.
+- `AI_DEVICE`: `auto`, `cpu`, or `cuda`. CUDA is selected only when requested or available.
+- `MODEL_NAME`: Hugging Face model identifier.
+- `QUANTIZATION`: set to `true` to apply PyTorch dynamic INT8 quantization to the Transformer on CPU. CUDA runs remain non-quantized because this implementation does not silently substitute an unsupported CUDA quantization path.
+- `BATCH_SIZE`: maximum number of texts sent to one local inference call, default `4`.
 
-UI Refresh Rate: Hardened data streams maintaining a consistent, smooth UI telemetry flow under heavy agent workloads.
+## API
 
+- `GET /api/health` returns service health.
+- `GET /api/model` returns model name, device, CUDA availability, quantization state, and batching capability.
+- `POST /api/workflows` with `{ "task": "..." }` starts a workflow and returns its ID.
+- `GET /api/workflows/{workflow_id}` returns current status and final result.
+- `WS /ws` streams structured events such as decomposition, agent status, tool selection, tool failure, self-correction, inference metrics, and completion.
 
+## Inference and RAG limitations
 
+Transformers and PyTorch are integrated behind `LocalModel`. Inference is lazy, CPU-compatible, and measures latency, batch size, batch count, device, and measured throughput. The abstraction chunks multi-item requests into configured batches. Individual dashboard workflows currently submit one analysis item, while the shared model interface is ready for concurrent or bulk analysis. CPU dynamic INT8 quantization is active only when explicitly enabled and successfully loaded; the runtime reports failures or CUDA limitations instead of claiming quantization.
 
+The tool result is passed as explicit analysis context. A vector database, embeddings, LangChain, LCEL, and production RAG pipeline are not implemented in this compact version; they are extension points rather than claims about the current system. The current news tool uses feed retrieval plus keyword matching, not semantic vector search.
 
+## Tests
+
+```powershell
+pytest -q
+```
+
+Tests cover health/model endpoints, Pydantic validation, topic-explanation routing, batched inference, and an end-to-end orchestration path with the external feed isolated.
